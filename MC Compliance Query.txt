@@ -1,0 +1,43 @@
+DeviceTvmSecureConfigurationAssessment 
+| where ConfigurationId in ('scid-2010','scid-2011','scid-2014','scid-2012','scid-2013','scid-2016','scid-2003', 'scid-90') 
+| extend IsAvEnabled=iif(ConfigurationId == "scid-2010" and IsCompliant==1, 1, 0),  
+IsRealtimeProtectionEnabled=iif(ConfigurationId == "scid-2012" and IsCompliant==1, 1, 0), 
+IsAVSignatureLatest=iif(ConfigurationId == "scid-2011" and IsCompliant==1, 1, 0),  
+IsAVReporting=iif(ConfigurationId == "scid-2014" and IsCompliant==1, 1, 0),  
+IsPuaEnabled=iif(ConfigurationId == "scid-2013" and IsCompliant==1, 1, 0),  
+IsCloudProtectionEnabled=iif(ConfigurationId == "scid-2016" and IsCompliant==1, 1, 0),  
+IsTamperProtectionEnabled=iif(ConfigurationId == "scid-2003" and IsCompliant==1, 1, 0),  
+IsEmailScanningEnabled=iif(ConfigurationId == "scid-90" and IsCompliant==1, 1, 0)  
+| summarize DeviceName=any(DeviceName), 
+IsAvEnabled=max(IsAvEnabled),  
+IsRealtimeProtectionEnabled=max(IsRealtimeProtectionEnabled),  
+IsAVSignatureLatest=max(IsAVSignatureLatest),  
+IsAVReporting=max(IsAVReporting),  
+IsPuaEnabled=max(IsPuaEnabled),  
+IsCloudProtectionEnabled=max(IsCloudProtectionEnabled),  
+IsTamperProtectionEnabled=max(IsTamperProtectionEnabled), 
+IsEmailScanningEnabled = max(IsEmailScanningEnabled) 
+by DeviceId, Timestamp, OSPlatform 
+| join kind=inner ( 
+DeviceFileEvents 
+| where InitiatingProcessCommandLine contains "MpSigStub.exe" 
+| extend NewVersion=tostring(split(InitiatingProcessCommandLine, " ")[4])  
+| summarize arg_max(NewVersion, *) by DeviceId 
+| project DeviceId , NewVersion, Timestamp 
+| join kind= inner ( 
+DeviceFileEvents 
+| where FileName == "MsMpEng.exe" 
+| where FolderPath contains @"C:\ProgramData\Microsoft\Windows Defender\Platform\" 
+| extend PlatformVersion=tostring(split(FolderPath, "\\", 5)) 
+| project DeviceId, PlatformVersion 
+) on DeviceId 
+| project Timestamp, DeviceId , NewVersion, PlatformVersion 
+| summarize arg_max(Timestamp, *) by DeviceId 
+) on DeviceId 
+| join kind=inner ( 
+DeviceInfo 
+| where isnotempty(OSBuild) 
+| summarize arg_max(Timestamp, *) by DeviceId, OSVersion, OSBuild, ClientVersion 
+| project DeviceId, OSVersion,OSBuild, ClientVersion 
+) on DeviceId 
+| project DeviceId, Timestamp, DeviceName, IsAvEnabled, IsRealtimeProtectionEnabled, IsAVSignatureLatest, IsAVReporting, IsPuaEnabled, IsCloudProtectionEnabled, IsTamperProtectionEnabled, IsEmailScanningEnabled, Timestamp1, PlatformVersion, NewVersion, OSPlatform ,OSVersion, OSBuild, ClientVersion
